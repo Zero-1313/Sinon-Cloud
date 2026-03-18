@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SC-OS Dashboard</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;600&display=swap" rel="stylesheet">
+
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Poppins', sans-serif;
+  background: #f0f4ff;
+  color: #1e2a3a;
+  min-height: 100vh;
+}
+
+header {
+  background: #1e2a3a;
+  color: white;
+  padding: 1rem;
+  text-align: center;
+  font-weight: 600;
+  font-size: 1.3rem;
+  position: relative;
+}
+
+.burger {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.3rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: white;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: -100%;
+  width: 70%;
+  max-width: 250px;
+  height: 100vh;
+  background: #1e2a3a;
+  padding: 4rem 1.2rem;
+  transition: 0.3s ease;
+  z-index: 1002;
+}
+
+.sidebar.open { left: 0; }
+
+.sidebar a {
+  display: block;
+  margin: 1rem 0;
+  text-decoration: none;
+  color: white;
+  font-weight: 600;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: none;
+  z-index: 1000;
+}
+
+.overlay.show { display:block; }
+
+.profile-section {
+  text-align: center;
+  padding: 2rem 1rem 1rem;
+}
+
+.data-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  padding: 1.5rem;
+  max-width: 600px;
+  margin: auto;
+}
+
+.card {
+  background: white;
+  border-left: 5px solid #0046ff;
+  border-radius: 10px;
+  padding: 1rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.card h3 {
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 0.4rem;
+}
+
+.card p {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.online { color: #16a34a; }
+.offline { color: #dc2626; }
+
+@media(min-width:600px){
+  .data-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+<div class="sidebar" id="sidebar">
+  <button style="background:none;border:none;color:white;font-size:1.2rem;margin-bottom:1rem;cursor:pointer;" onclick="closeSidebar()">←</button>
+  <a href="#">Dashboard</a>
+  <a href="#">Cloud Files</a>
+  <a href="#">Database</a>
+  <a href="#">Monitoring</a>
+  <a href="/Dev_Web/myweb.html">Web Host</a>
+  <a href="../index.html" onclick="logout()">Logout</a>
+</div>
+
+<header>
+  <button class="burger" onclick="toggleSidebar()">☰</button>
+  Sinon Cloud OS
+</header>
+
+<div class="profile-section">
+  <h1>SC-OS v0.1</h1>
+</div>
+
+<div class="data-grid">
+  <div class="card">
+    <h3>Status</h3>
+    <p id="statusText">Checking...</p>
+  </div>
+
+  <div class="card">
+    <h3>System Mode</h3>
+    <p id="systemMode">Initializing...</p>
+  </div>
+
+  <div class="card">
+    <h3>Cloud Sync</h3>
+    <p id="cloudSync">Checking...</p>
+  </div>
+
+  <div class="card">
+    <h3>Database</h3>
+    <p id="databaseStatus">Checking...</p>
+  </div>
+
+  <div class="card">
+    <h3>Local Server</h3>
+    <p id="serverStatus">Checking...</p>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCBcW_khcw7dQQ1IQlzVQ-ALI8h7r0rkGE",
+  authDomain: "sinon-cloud-os.firebaseapp.com",
+  databaseURL: "https://sinon-cloud-os-default-rtdb.asia-southeast1.firebasedatabase.app/",
+  projectId: "sinon-cloud-os",
+  storageBucket: "sinon-cloud-os.firebasestorage.app",
+  messagingSenderId: "854460809293",
+  appId: "1:854460809293:web:50788188a1bdf4153f5c04",
+  measurementId: "G-N470NQC219"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.database();
+
+/* LOGIN CHECK */
+auth.onAuthStateChanged(user => {
+  if (!user) {
+    window.location.href = "/index.html";
+  }
+});
+
+/* FIREBASE CONNECTION */
+const connectedRef = db.ref(".info/connected");
+
+connectedRef.on("value", (snap) => {
+  const isOnline = snap.val();
+
+  updateStatus(isOnline);
+});
+
+function updateStatus(isOnline) {
+  const statusText = document.getElementById("statusText");
+  const cloudSync = document.getElementById("cloudSync");
+  const databaseStatus = document.getElementById("databaseStatus");
+  const systemMode = document.getElementById("systemMode");
+
+  statusText.textContent = isOnline ? "System Online" : "System Offline";
+  cloudSync.textContent = isOnline ? "Synced" : "Disconnected";
+  databaseStatus.textContent = isOnline ? "Firebase Connected" : "No Connection";
+  systemMode.textContent = isOnline ? "Operational" : "Standby";
+
+  statusText.className = isOnline ? "online" : "offline";
+  cloudSync.className = isOnline ? "online" : "offline";
+  databaseStatus.className = isOnline ? "online" : "offline";
+}
+
+/* CEK SERVER TERMUX */
+const serverURL = "http://192.168.1.3:3000"; // GANTI sesuai IP kamu
+
+async function checkServer() {
+  const serverStatus = document.getElementById("serverStatus");
+
+  try {
+    const res = await fetch(serverURL);
+
+    if (res.ok) {
+      serverStatus.textContent = "Online";
+      serverStatus.className = "online";
+    } else {
+      throw new Error();
+    }
+
+  } catch {
+    serverStatus.textContent = "Offline";
+    serverStatus.className = "offline";
+  }
+}
+
+setInterval(checkServer, 5000);
+checkServer();
+
+/* SIDEBAR */
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("overlay").classList.add("show");
+}
+
+function closeSidebar(){
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("overlay").classList.remove("show");
+}
+
+function logout(){
+  auth.signOut().then(()=>{
+    window.location.href="/index.html";
+  });
+}
+</script>
+
+</body>
+</html>

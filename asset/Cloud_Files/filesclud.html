@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SC-OS Cloud</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:Poppins,sans-serif;}
+body{background:#f4f6fb;height:100vh;display:flex;overflow:hidden;}
+
+.sidebar{
+  width:220px;
+  background:white;
+  border-right:1px solid #eee;
+  padding:20px;
+}
+.sidebar h2{font-size:18px;}
+
+.main{flex:1;display:flex;flex-direction:column;}
+
+.topbar{
+  background:white;
+  padding:15px 20px;
+  border-bottom:1px solid #eee;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.search{
+  width:40%;
+}
+.search input{
+  width:100%;
+  padding:8px 12px;
+  border-radius:20px;
+  border:1px solid #ddd;
+  outline:none;
+}
+
+.back-btn{
+  border:none;
+  background:#eee;
+  padding:6px 12px;
+  border-radius:6px;
+  cursor:pointer;
+}
+
+.file-area{flex:1;padding:20px;overflow-y:auto;}
+.file-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+  gap:15px;
+}
+
+.file-card{
+  background:white;
+  padding:15px;
+  border-radius:10px;
+  border:1px solid #eee;
+  cursor:pointer;
+  transition:.2s;
+}
+.file-card:hover{box-shadow:0 4px 10px rgba(0,0,0,0.05);}
+.file-name{margin-top:10px;font-size:14px;font-weight:600;word-break:break-word;}
+
+.actions{
+  margin-top:8px;
+  display:flex;
+  justify-content:space-between;
+}
+.actions button{
+  font-size:11px;
+  border:none;
+  padding:4px 6px;
+  border-radius:4px;
+  cursor:pointer;
+  background:#eee;
+}
+
+.fab{
+  position:fixed;
+  bottom:25px;
+  right:25px;
+  width:55px;
+  height:55px;
+  border-radius:50%;
+  border:none;
+  font-size:28px;
+  color:white;
+  background:#0046ff;
+  cursor:pointer;
+  box-shadow:0 5px 15px rgba(0,0,0,0.2);
+}
+
+.popup{
+  position:fixed;
+  bottom:90px;
+  right:25px;
+  background:white;
+  border:1px solid #ddd;
+  border-radius:10px;
+  display:none;
+  flex-direction:column;
+  overflow:hidden;
+}
+.popup button{
+  padding:10px 20px;
+  border:none;
+  background:white;
+  cursor:pointer;
+}
+.popup button:hover{background:#f2f2f2;}
+</style>
+</head>
+<body>
+
+<div class="main">
+  <div class="topbar">
+    <button class="back-btn" onclick="goBack()">Back</button>
+    <div class="search">
+      <input type="text" placeholder="Search..." oninput="searchFiles(this.value)">
+    </div>
+    <div></div>
+  </div>
+
+  <div class="file-area">
+    <div class="file-grid" id="fileGrid"></div>
+  </div>
+</div>
+
+<button class="fab" onclick="togglePopup()">+</button>
+
+<div class="popup" id="popupMenu">
+  <button onclick="triggerUpload()">Upload File</button>
+  <button onclick="createFolder()">New Folder</button>
+</div>
+
+<input type="file" id="fileInput" hidden>
+
+<script>
+const firebaseConfig={
+  apiKey: "AIzaSyCBcW_khcw7dQQ1IQlzVQ-ALI8h7r0rkGE",
+  authDomain: "sinon-cloud-os.firebaseapp.com",
+  databaseURL: "https://sinon-cloud-os-default-rtdb.asia-southeast1.firebasedatabase.app/",
+  projectId: "sinon-cloud-os",
+  storageBucket: "sinon-cloud-os.firebasestorage.app",
+  messagingSenderId: "854460809293",
+  appId: "1:854460809293:web:50788188a1bdf4153f5c04",
+  measurementId: "G-N470NQC219"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.database();
+const storage=firebase.storage();
+
+let user;
+let currentPath="root";
+
+auth.onAuthStateChanged(u=>{
+  if(u){user=u;loadFiles();}
+  else alert("Login dulu");
+});
+
+function togglePopup(){
+  const p=document.getElementById("popupMenu");
+  p.style.display=p.style.display==="flex"?"none":"flex";
+}
+
+function goBack(){
+  if(currentPath==="root")return;
+  const parts=currentPath.split("/");
+  parts.pop();
+  currentPath=parts.join("/")||"root";
+  loadFiles();
+}
+
+function createFolder(){
+  const name=prompt("Nama folder:");
+  if(!name)return;
+  db.ref("files/"+user.uid+"/"+currentPath+"/"+name).set({
+    type:"folder",
+    createdAt:Date.now()
+  });
+  togglePopup();
+  loadFiles();
+}
+
+function triggerUpload(){
+  document.getElementById("fileInput").click();
+}
+
+document.getElementById("fileInput").addEventListener("change",e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+
+  const storagePath="users/"+user.uid+"/"+currentPath+"/"+file.name;
+  storage.ref(storagePath).put(file).then(()=>{
+    db.ref("files/"+user.uid+"/"+currentPath+"/"+file.name).set({
+      type:"file",
+      path:storagePath,
+      createdAt:Date.now()
+    });
+    togglePopup();
+    loadFiles();
+  });
+});
+
+function loadFiles(){
+  const grid=document.getElementById("fileGrid");
+  grid.innerHTML="";
+
+  db.ref("files/"+user.uid+"/"+currentPath).once("value",snap=>{
+    snap.forEach(child=>{
+      const data=child.val();
+      const name=child.key;
+
+      const card=document.createElement("div");
+      card.className="file-card";
+
+      card.innerHTML=`
+        <div>${data.type==="folder"?"📁":"📄"}</div>
+        <div class="file-name">${name}</div>
+        <div class="actions">
+          <button onclick="renameItem('${name}')">Rename</button>
+          <button onclick="deleteItem('${name}')">Delete</button>
+        </div>
+      `;
+
+      if(data.type==="folder"){
+        card.onclick=()=>{currentPath+="/"+name;loadFiles();}
+      }
+
+      grid.appendChild(card);
+    });
+  });
+}
+
+function deleteItem(name){
+  if(!confirm("Hapus?"))return;
+  db.ref("files/"+user.uid+"/"+currentPath+"/"+name).remove();
+  loadFiles();
+}
+
+function renameItem(oldName){
+  const newName=prompt("Nama baru:");
+  if(!newName)return;
+
+  const oldRef=db.ref("files/"+user.uid+"/"+currentPath+"/"+oldName);
+  oldRef.once("value",snap=>{
+    const data=snap.val();
+    db.ref("files/"+user.uid+"/"+currentPath+"/"+newName).set(data);
+    oldRef.remove();
+    loadFiles();
+  });
+}
+
+function searchFiles(keyword){
+  const cards=document.querySelectorAll(".file-card");
+  cards.forEach(card=>{
+    const name=card.innerText.toLowerCase();
+    card.style.display=name.includes(keyword.toLowerCase())?"block":"none";
+  });
+}
+</script>
+
+</body>
+</html>
